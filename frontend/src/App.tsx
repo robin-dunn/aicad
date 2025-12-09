@@ -131,7 +131,8 @@ function App() {
 
             <div
               style={{
-                width: "100%",
+                width: "600px", // Fixed width instead of 100%
+                maxWidth: "100%", // Still responsive
                 height: "400px",
                 marginTop: "20px",
                 border: "1px solid white",
@@ -142,7 +143,7 @@ function App() {
                 <Stage environment="city" intensity={0.6}>
                   <STLModel url={stlUrl} />
                 </Stage>
-                <OrbitControls autoRotate autoRotateSpeed={0.5} />
+                <OrbitControls autoRotate={false} autoRotateSpeed={0.5} />
               </Canvas>
             </div>
           </>

@@ -7,6 +7,7 @@ import { Box3, PerspectiveCamera, Vector3 } from "three"
 import "./App.css"
 import { DialogOpenProject } from "./DialogOpenProject"
 import { useSaveProject } from "./hooks/useProjects"
+import { DialogSaveProject } from "./DialogSaveProject"
 
 interface Shape {
   id: string
@@ -315,6 +316,12 @@ function App() {
         isOpen={dialog.name === "Open Project" && dialog.isOpen}
         onClose={() => setDialog({ name: "", isOpen: false })}
         onLoad={() => {}}
+        currentProjectName={projectName}
+      />
+      <DialogSaveProject
+        isOpen={dialog.name === "Save Project" && dialog.isOpen}
+        onClose={() => setDialog({ name: "", isOpen: false })}
+        onSave={handleSaveProject}
         currentProjectName={projectName}
       />
       <div

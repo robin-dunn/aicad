@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
 import { Box3, PerspectiveCamera, Vector3 } from "three"
+import { ProjectManager } from "./ProjectManager"
 import "./App.css"
 
 interface Shape {
@@ -324,43 +325,14 @@ function App() {
             overflowY: "auto",
           }}
         >
-          {/* New Project Management Card */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Project</h2>
-            <input
-              type="text"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Enter project name"
-              style={{
-                width: "100%",
-                padding: "8px",
-                marginBottom: "10px",
-                fontSize: "16px",
-              }}
-            />
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <button
-                onClick={handleSaveProject}
-                disabled={loading || shapes.length === 0}
-                style={{ flex: 1 }}
-              >
-                Save Project
-              </button>
-              <button
-                onClick={() => setShowProjectDialog(true)}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Load Project
-              </button>
-            </div>
-            {projectName && (
-              <div style={{ fontSize: "0.9em", opacity: 0.7 }}>
-                Current: {projectName}
-              </div>
-            )}
-          </div>
+          <ProjectManager
+            projectName={projectName}
+            setProjectName={setProjectName}
+            onSave={handleSaveProject}
+            onLoad={handleLoadProject}
+            loading={loading}
+            shapesCount={shapes.length}
+          />
 
           {/* Existing Add Shape Card */}
           <div className="card">

@@ -28,6 +28,28 @@ class ProjectFile(BaseModel):
 
 projects_dir = Path("data/projects")
 
+
+@app.get("/projects/list")
+async def list_projects():
+    """List all projects by finding subdirectories with project.json files"""
+    projects = []
+    
+    # Iterate through subdirectories in data/projects/
+    if projects_dir.exists():
+        for subdir in projects_dir.iterdir():
+            if subdir.is_dir():
+                # Check if this subdirectory contains a project.json file
+                project_file = subdir / "project.json"
+                if project_file.exists():
+                    # Use the directory name as the project name
+                    projects.append(subdir.name)
+    
+    # Sort alphabetically for better UX
+    projects.sort()
+    
+    return {"projects": projects}
+
+
 @app.post("/project/save")
 async def save_project(project: ProjectFile):
     """Save project with B-Rep data"""

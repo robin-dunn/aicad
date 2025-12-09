@@ -18,6 +18,68 @@ app.add_middleware(
 class ShapeRequest(BaseModel):
     prompt: str
 
+
+import json
+from pathlib import Path
+
+class ProjectFile(BaseModel):
+    name: str
+    shapes: list[dict]  # Each shape has params + optional STEP data
+
+projects_dir = Path("data/projects")
+
+@app.post("/project/save")
+async def save_project(project: ProjectFile):
+    """Save project with B-Rep data"""
+    project_dir = Path(f"{projects_dir}/{project.name}")
+    project_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save metadata
+    metadata = {
+        "name": project.name,
+        "shapes": []
+    }
+    
+    # Save each shape as STEP (B-Rep format)
+    for idx, shape_data in enumerate(project.shapes):
+        model = generate_cad(shape_data["params"])
+        step_path = project_dir / f"shape_{idx}.step"
+        model.val().exportStep(str(step_path))
+        
+        metadata["shapes"].append({
+            "params": shape_data["params"],  # Nested params
+            "position": shape_data.get("position", [0, 0, 0]),
+            "rotation": shape_data.get("rotation", [0, 0, 0]),
+            "prompt": shape_data.get("prompt", ""),
+            "brep_file": f"shape_{idx}.step"
+        })
+    
+    # Save project metadata
+    with open(project_dir / "project.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+    
+    return {"success": True, "path": str(project_dir)}
+
+@app.post("/project/load")
+async def load_project(project_name: str):
+    """Load project from B-Rep data"""
+    project_dir = Path(f"{projects_dir}/{project_name}")
+    
+    with open(project_dir / "project.json") as f:
+        metadata = json.load(f)
+    
+    # Return the shapes exactly as they were saved
+    return {"success": True, "shapes": metadata["shapes"]}
+
+
+@app.post("/generate_from_params")
+async def generate_from_params(params: dict):
+    """Generate 3D shape from saved parameters"""
+    model = generate_cad(params)
+    model.val().exportStl("output.stl")
+    return {"success": True, "params": params, "file_url": "/download/stl"}
+
+
 def parse_prompt(prompt: str) -> dict:
     """Parse text into shape parameters"""
     prompt = prompt.lower()

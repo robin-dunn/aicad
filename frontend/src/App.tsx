@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
-import { Box3, Vector3, Euler } from "three"
+import { Box3, PerspectiveCamera, Vector3 } from "three"
 import "./App.css"
 
 interface Shape {
@@ -12,6 +12,7 @@ interface Shape {
   position: [number, number, number]
   rotation: [number, number, number]
   prompt: string
+  params: any // Store the backend params for saving
 }
 
 function STLModel({
@@ -40,8 +41,12 @@ function STLModel({
 }
 
 function CameraController({ shapes }: { shapes: Shape[] }) {
-  const { camera, scene } = useThree()
-  const controlsRef = useRef<any>()
+  const { camera, scene } = useThree((state) => ({
+    camera: state.camera as PerspectiveCamera,
+    scene: state.scene,
+  }))
+
+  const controlsRef = useRef<any>(undefined)
 
   useEffect(() => {
     if (shapes.length === 0) return
@@ -102,6 +107,11 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
 
+  // New state for project management
+  const [projectName, setProjectName] = useState("")
+  const [availableProjects, setAvailableProjects] = useState<string[]>([])
+  const [showProjectDialog, setShowProjectDialog] = useState(false)
+
   const handleGenerate = async () => {
     setLoading(true)
     setError(null)
@@ -138,6 +148,7 @@ function App() {
         position: [position.x, position.y, position.z],
         rotation: [rotation.x, rotation.y, rotation.z],
         prompt,
+        params: data.params, // Store backend params
       }
 
       setShapes((prev) => [...prev, newShape])
@@ -145,6 +156,130 @@ function App() {
       console.log(`Loaded STL (${blob.size} bytes)`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred")
+      console.error("Error:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveProject = async () => {
+    if (!projectName.trim()) {
+      setError("Please enter a project name")
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const projectData = {
+        name: projectName,
+        shapes: shapes.map((shape) => ({
+          params: shape.params,
+          position: shape.position,
+          rotation: shape.rotation,
+          prompt: shape.prompt,
+        })),
+      }
+
+      const response = await fetch("http://localhost:8000/project/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(projectData),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Save failed! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log("Project saved:", result)
+      alert(`Project "${projectName}" saved successfully!`)
+      setShowProjectDialog(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed")
+      console.error("Error:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLoadProject = async (name: string) => {
+    setLoading(true)
+    setError(null)
+
+    // Clear existing shapes
+    handleClearAll()
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/project/load?project_name=${encodeURIComponent(
+          name
+        )}`,
+        {
+          method: "POST",
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Load failed! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log("Project loaded:", result)
+
+      // Regenerate each shape from saved params
+      for (const shapeData of result.shapes) {
+        // Generate shape from params (not prompt)
+        const generateRequestBody = JSON.stringify(shapeData.params)
+        console.log("generateRequestBody", generateRequestBody)
+
+        const generateResponse = await fetch(
+          "http://localhost:8000/generate_from_params",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: generateRequestBody,
+          }
+        )
+
+        if (!generateResponse.ok) continue
+
+        const data = await generateResponse.json()
+
+        // Download STL
+        const downloadResponse = await fetch(
+          "http://localhost:8000/download/stl"
+        )
+        if (!downloadResponse.ok) continue
+
+        const blob = await downloadResponse.blob()
+        const url = window.URL.createObjectURL(blob)
+
+        const loadedShape: Shape = {
+          id: Date.now().toString() + Math.random(), // Unique ID
+          url,
+          position: shapeData.position || [0, 0, 0],
+          rotation: shapeData.rotation || [0, 0, 0],
+          prompt: shapeData.prompt || "",
+          params: shapeData.params,
+        }
+
+        setShapes((prev) => [...prev, loadedShape])
+
+        // Small delay to avoid overwhelming the backend
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      setProjectName(name)
+      setShowProjectDialog(false)
+      alert(`Project "${name}" loaded successfully!`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Load failed")
       console.error("Error:", err)
     } finally {
       setLoading(false)
@@ -189,6 +324,45 @@ function App() {
             overflowY: "auto",
           }}
         >
+          {/* New Project Management Card */}
+          <div className="card">
+            <h2 style={{ marginTop: 0 }}>Project</h2>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="Enter project name"
+              style={{
+                width: "100%",
+                padding: "8px",
+                marginBottom: "10px",
+                fontSize: "16px",
+              }}
+            />
+            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+              <button
+                onClick={handleSaveProject}
+                disabled={loading || shapes.length === 0}
+                style={{ flex: 1 }}
+              >
+                Save Project
+              </button>
+              <button
+                onClick={() => setShowProjectDialog(true)}
+                disabled={loading}
+                style={{ flex: 1 }}
+              >
+                Load Project
+              </button>
+            </div>
+            {projectName && (
+              <div style={{ fontSize: "0.9em", opacity: 0.7 }}>
+                Current: {projectName}
+              </div>
+            )}
+          </div>
+
+          {/* Existing Add Shape Card */}
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Add Shape</h2>
             <input
@@ -365,6 +539,7 @@ function App() {
             )}
           </div>
 
+          {/* Existing Shapes List */}
           {shapes.length > 0 && (
             <div className="card">
               <h2 style={{ marginTop: 0 }}>Shapes ({shapes.length})</h2>
@@ -416,6 +591,7 @@ function App() {
           )}
         </div>
 
+        {/* Canvas area */}
         <div
           style={{
             width: "70%",
@@ -457,6 +633,60 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* Simple Load Project Dialog */}
+      {showProjectDialog && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setShowProjectDialog(false)}
+        >
+          <div
+            className="card"
+            style={{ minWidth: "400px", maxWidth: "600px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0 }}>Load Project</h2>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="Enter project name to load"
+              style={{
+                width: "100%",
+                padding: "8px",
+                marginBottom: "10px",
+                fontSize: "16px",
+              }}
+            />
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => handleLoadProject(projectName)}
+                disabled={!projectName.trim() || loading}
+                style={{ flex: 1 }}
+              >
+                Load
+              </button>
+              <button
+                onClick={() => setShowProjectDialog(false)}
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

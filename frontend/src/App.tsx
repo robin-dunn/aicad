@@ -4,8 +4,9 @@ import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
 import { Box3, PerspectiveCamera, Vector3 } from "three"
-import { ProjectManager } from "./ProjectManager"
 import "./App.css"
+import { DialogOpenProject } from "./DialogOpenProject"
+import { useSaveProject } from "./hooks/useProjects"
 
 interface Shape {
   id: string
@@ -104,9 +105,11 @@ function App() {
   const [prompt, setPrompt] = useState("cylinder radius 5 height 10")
   const [position, setPosition] = useState({ x: 0, y: 0, z: 0 })
   const [rotation, setRotation] = useState({ x: 0, y: 0, z: 0 })
+  const [dialog, setDialog] = useState({ name: "", isOpen: false })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
+  const saveProjectMutation = useSaveProject()
 
   // New state for project management
   const [projectName, setProjectName] = useState("")
@@ -163,48 +166,27 @@ function App() {
     }
   }
 
-  const handleSaveProject = async () => {
+  const handleSaveProject = async (projectName: string) => {
     if (!projectName.trim()) {
       setError("Please enter a project name")
       return
     }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const projectData = {
-        name: projectName,
-        shapes: shapes.map((shape) => ({
-          params: shape.params,
-          position: shape.position,
-          rotation: shape.rotation,
-          prompt: shape.prompt,
-        })),
-      }
-
-      const response = await fetch("http://localhost:8000/project/save", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(projectData),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Save failed! status: ${response.status}`)
-      }
-
-      const result = await response.json()
-      console.log("Project saved:", result)
-      alert(`Project "${projectName}" saved successfully!`)
-      setShowProjectDialog(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed")
-      console.error("Error:", err)
-    } finally {
-      setLoading(false)
+    const projectData = {
+      name: projectName,
+      shapes: shapes.map((shape) => ({
+        params: shape.params,
+        position: shape.position,
+        rotation: shape.rotation,
+        prompt: shape.prompt,
+      })),
     }
+
+    saveProjectMutation.mutate(projectData, {
+      onSuccess: () => {
+        setProjectName(projectName)
+        setDialog({ name: "", isOpen: false })
+      },
+    })
   }
 
   const handleLoadProject = async (name: string) => {
@@ -306,7 +288,35 @@ function App() {
 
   return (
     <>
-      <h1 style={{ margin: "10px 0", fontSize: "2rem" }}>Text-to-CAD App</h1>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: "20px",
+        }}
+      >
+        <button
+          onClick={() => setDialog({ name: "Open Project", isOpen: true })}
+          disabled={loading}
+          style={{ flex: 1 }}
+        >
+          Open Project
+        </button>
+        <button
+          onClick={() => setDialog({ name: "Save Project", isOpen: true })}
+          disabled={loading}
+          style={{ flex: 1 }}
+        >
+          Save Project
+        </button>
+      </div>
+      <DialogOpenProject
+        isOpen={dialog.name === "Open Project" && dialog.isOpen}
+        onClose={() => setDialog({ name: "", isOpen: false })}
+        onLoad={() => {}}
+        currentProjectName={projectName}
+      />
       <div
         style={{
           display: "flex",
@@ -325,15 +335,6 @@ function App() {
             overflowY: "auto",
           }}
         >
-          <ProjectManager
-            projectName={projectName}
-            setProjectName={setProjectName}
-            onSave={handleSaveProject}
-            onLoad={handleLoadProject}
-            loading={loading}
-            shapesCount={shapes.length}
-          />
-
           {/* Existing Add Shape Card */}
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Add Shape</h2>

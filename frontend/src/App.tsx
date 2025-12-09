@@ -1,29 +1,39 @@
 import { useState, useEffect, useRef } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
-import { OrbitControls, Stage } from "@react-three/drei"
+import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
-import { Box3, Vector3 } from "three"
+import { Box3, Vector3, Euler } from "three"
 import "./App.css"
 
 interface Shape {
   id: string
   url: string
   position: [number, number, number]
+  rotation: [number, number, number]
   prompt: string
 }
 
 function STLModel({
   url,
   position,
+  rotation,
 }: {
   url: string
   position: [number, number, number]
+  rotation: [number, number, number]
 }) {
   const geometry = useLoader(STLLoader, url)
 
+  // Convert degrees to radians for Three.js
+  const rotationRadians: [number, number, number] = [
+    (rotation[0] * Math.PI) / 180,
+    (rotation[1] * Math.PI) / 180,
+    (rotation[2] * Math.PI) / 180,
+  ]
+
   return (
-    <mesh geometry={geometry} position={position}>
+    <mesh geometry={geometry} position={position} rotation={rotationRadians}>
       <meshStandardMaterial color="#3b82f6" />
     </mesh>
   )
@@ -36,7 +46,6 @@ function CameraController({ shapes }: { shapes: Shape[] }) {
   useEffect(() => {
     if (shapes.length === 0) return
 
-    // Calculate bounding box of all objects in the scene
     const box = new Box3()
 
     scene.traverse((object) => {
@@ -48,24 +57,17 @@ function CameraController({ shapes }: { shapes: Shape[] }) {
 
     if (box.isEmpty()) return
 
-    // Get the center and size of the bounding box
     const center = box.getCenter(new Vector3())
     const size = box.getSize(new Vector3())
-
-    // Calculate the max dimension
     const maxDim = Math.max(size.x, size.y, size.z)
-
-    // Calculate camera distance (with some padding)
     const fov = camera.fov * (Math.PI / 180)
     const paddingMultiplier = 5
     const cameraDistance =
       (maxDim / (2 * Math.tan(fov / 2))) * paddingMultiplier
 
-    // Position camera at an angle
     const direction = new Vector3(1, 1, 1).normalize()
     camera.position.copy(direction.multiplyScalar(cameraDistance).add(center))
 
-    // Update controls target to look at the center
     if (controlsRef.current) {
       controlsRef.current.target.copy(center)
       controlsRef.current.update()
@@ -75,9 +77,27 @@ function CameraController({ shapes }: { shapes: Shape[] }) {
   return <OrbitControls ref={controlsRef} autoRotate={false} />
 }
 
+function AxisHelper() {
+  return (
+    <group>
+      <arrowHelper
+        args={[new Vector3(1, 0, 0), new Vector3(0, 0, 0), 20, 0xff0000]}
+      />
+      <arrowHelper
+        args={[new Vector3(0, 1, 0), new Vector3(0, 0, 0), 20, 0x00ff00]}
+      />
+      <arrowHelper
+        args={[new Vector3(0, 0, 1), new Vector3(0, 0, 0), 20, 0x0000ff]}
+      />
+      <gridHelper args={[50, 10, 0x888888, 0x444444]} />
+    </group>
+  )
+}
+
 function App() {
   const [prompt, setPrompt] = useState("cylinder radius 5 height 10")
   const [position, setPosition] = useState({ x: 0, y: 0, z: 0 })
+  const [rotation, setRotation] = useState({ x: 0, y: 0, z: 0 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
@@ -87,7 +107,6 @@ function App() {
     setError(null)
 
     try {
-      // Step 1: Generate the shape
       const generateResponse = await fetch("http://localhost:8000/generate", {
         method: "POST",
         headers: {
@@ -103,7 +122,6 @@ function App() {
       const data = await generateResponse.json()
       console.log("Response from backend:", data)
 
-      // Step 2: Download the STL file
       console.log("Downloading STL...")
       const downloadResponse = await fetch("http://localhost:8000/download/stl")
 
@@ -112,15 +130,13 @@ function App() {
       }
 
       const blob = await downloadResponse.blob()
-
-      // Create object URL for 3D viewer
       const url = window.URL.createObjectURL(blob)
 
-      // Add new shape to the scene
       const newShape: Shape = {
         id: Date.now().toString(),
         url,
         position: [position.x, position.y, position.z],
+        rotation: [rotation.x, rotation.y, rotation.z],
         prompt,
       }
 
@@ -156,9 +172,14 @@ function App() {
     <>
       <h1 style={{ margin: "10px 0", fontSize: "2rem" }}>Text-to-CAD App</h1>
       <div
-        style={{ display: "flex", gap: "20px", height: "calc(100vh - 150px)" }}
+        style={{
+          display: "flex",
+          gap: "20px",
+          height: "calc(100vh - 150px)",
+          flexGrow: 1,
+          padding: "1rem",
+        }}
       >
-        {/* Left Panel - 30% */}
         <div
           style={{
             width: "30%",
@@ -174,7 +195,7 @@ function App() {
               type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter shape description"
+              placeholder="e.g. cylinder radius 5 height 10 lying"
               style={{
                 width: "100%",
                 padding: "8px",
@@ -183,6 +204,7 @@ function App() {
               }}
             />
 
+            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>Position</h3>
             <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
               <div style={{ flex: 1 }}>
                 <label
@@ -252,6 +274,78 @@ function App() {
               </div>
             </div>
 
+            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>
+              Rotation (degrees)
+            </h3>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontSize: "14px",
+                  }}
+                >
+                  X
+                </label>
+                <input
+                  type="number"
+                  value={rotation.x}
+                  onChange={(e) =>
+                    setRotation({
+                      ...rotation,
+                      x: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  style={{ width: "100%", padding: "8px" }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontSize: "14px",
+                  }}
+                >
+                  Y
+                </label>
+                <input
+                  type="number"
+                  value={rotation.y}
+                  onChange={(e) =>
+                    setRotation({
+                      ...rotation,
+                      y: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  style={{ width: "100%", padding: "8px" }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontSize: "14px",
+                  }}
+                >
+                  Z
+                </label>
+                <input
+                  type="number"
+                  value={rotation.z}
+                  onChange={(e) =>
+                    setRotation({
+                      ...rotation,
+                      z: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  style={{ width: "100%", padding: "8px" }}
+                />
+              </div>
+            </div>
+
             <button
               onClick={handleGenerate}
               disabled={loading}
@@ -293,11 +387,21 @@ function App() {
                       style={{
                         fontSize: "0.85em",
                         opacity: 0.7,
-                        marginBottom: "8px",
+                        marginBottom: "4px",
                       }}
                     >
                       Pos: ({shape.position[0]}, {shape.position[1]},{" "}
                       {shape.position[2]})
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.85em",
+                        opacity: 0.7,
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Rot: ({shape.rotation[0]}°, {shape.rotation[1]}°,{" "}
+                      {shape.rotation[2]}°)
                     </div>
                     <button
                       onClick={() => handleRemoveShape(shape.id)}
@@ -312,7 +416,6 @@ function App() {
           )}
         </div>
 
-        {/* Right Panel - 70% */}
         <div
           style={{
             width: "70%",
@@ -326,11 +429,15 @@ function App() {
               <ambientLight intensity={0.5} />
               <directionalLight position={[10, 10, 5]} intensity={1} />
               <directionalLight position={[-10, -10, -5]} intensity={0.5} />
+
+              <AxisHelper />
+
               {shapes.map((shape) => (
                 <STLModel
                   key={shape.id}
                   url={shape.url}
                   position={shape.position}
+                  rotation={shape.rotation}
                 />
               ))}
               <CameraController shapes={shapes} />

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 interface LibraryShape {
   filename: string
   display_name: string
+  attributes?: Record<string, string>
 }
 
 interface ObjectLibraryProps {
@@ -56,10 +57,15 @@ export function ObjectLibrary({ onAddToScene }: ObjectLibraryProps) {
                 backgroundColor: "#2a2a2a",
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "center",
+                textAlign: "left",
               }}
             >
               <div>
+                {shape.attributes && (
+                  <div style={{ fontWeight: 500 }}>
+                    {shape.attributes["TraceParts.PartTitle"]}
+                  </div>
+                )}
                 <div style={{ fontWeight: 500 }}>{shape.display_name}</div>
                 <div
                   style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}

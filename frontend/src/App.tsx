@@ -554,60 +554,6 @@ function App() {
           )}
         </div>
       </div>
-
-      {/* Simple Load Project Dialog */}
-      {showProjectDialog && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.8)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={() => setShowProjectDialog(false)}
-        >
-          <div
-            className="card"
-            style={{ minWidth: "400px", maxWidth: "600px" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ marginTop: 0 }}>Load Project</h2>
-            <input
-              type="text"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Enter project name to load"
-              style={{
-                width: "100%",
-                padding: "8px",
-                marginBottom: "10px",
-                fontSize: "16px",
-              }}
-            />
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                onClick={() => handleLoadProject(projectName)}
-                disabled={!projectName.trim() || loading}
-                style={{ flex: 1 }}
-              >
-                Load
-              </button>
-              <button
-                onClick={() => setShowProjectDialog(false)}
-                style={{ flex: 1 }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

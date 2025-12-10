@@ -273,7 +273,7 @@ async def health():
 
 @app.get("/library/shapes")
 async def list_library_shapes():
-    """List all STEP files in the library directory"""
+    """List all STEP files in the library directory with their attributes"""
     if not LIBRARY_DIR.exists():
         LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
         return {"shapes": []}
@@ -282,10 +282,49 @@ async def list_library_shapes():
     
     # Find all .step files
     for file_path in LIBRARY_DIR.glob("*.step"):
-        shapes.append({
+        shape_info = {
             "filename": file_path.name,
             "display_name": file_path.stem.replace("_", " ").title(),
-        })
+            "attributes": None
+        }
+        
+        # Try to load attributes from companion TXT file
+        txt_path = LIBRARY_DIR / f"{file_path.stem.lower().replace('.', '_')}.txt"
+        if txt_path.exists():
+            try:
+                attributes = {}
+                with open(txt_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    
+                    # Skip header line if it exists
+                    for line in lines[1:]:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        # Parse semicolon-delimited format: "Symbol";"Value";"Unit";
+                        parts = line.split(';')
+                        
+                        # Remove quotes and whitespace
+                        parts = [p.strip().strip('"') for p in parts]
+                        
+                        if len(parts) >= 2:
+                            symbol = parts[0]
+                            value = parts[1]
+                            unit = parts[2] if len(parts) >= 3 else ""
+                            
+                            # Store as key-value pairs, including unit if present
+                            if unit:
+                                attributes[symbol] = {"value": value, "unit": unit}
+                            else:
+                                attributes[symbol] = value
+                
+                shape_info["attributes"] = attributes
+            except Exception as e:
+                print(f"Warning: Failed to load attributes for {file_path.name}: {e}")
+                # Continue without attributes rather than failing
+        
+        shapes.append(shape_info)
     
     shapes.sort(key=lambda x: x["filename"])
     return {"shapes": shapes}

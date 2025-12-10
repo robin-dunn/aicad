@@ -1,0 +1,12 @@
+﻿"Symbol";"Value";"Unit";
+"TraceParts.PartNumber";"90-14012025-015396";"";
+"MATERIAL";"S45C";"";
+"TraceParts.PartTitle";"Spur Gear (Customizable)";"";
+"TraceParts.InstanceId";"90-14012025-015396CO0BRUX8906MQ5XHP7JT7UVT5";"";
+"REFERENCE";"CCLD-C2E1-CF-1.0-20-B10-A-P8";"";
+"SUPPLIER";"JLCMC";"";
+"DESIGN";"Spur Gear - CCLD-C2E1-CF-1.0-20-B10-A-P8";"";
+"Part_Number_ProductPage_URL";"https://jlcmc.com/?from=TP_G";"";
+"TRACEPARTS";"TRACEPARTS";"";
+"TraceParts.PartLanguage";"en";"";
+"TraceParts.PartVersion";"1.0.0";"";

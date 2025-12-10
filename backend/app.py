@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -203,3 +203,63 @@ async def list_library_shapes():
     
     shapes.sort(key=lambda x: x["filename"])
     return {"shapes": shapes}
+
+@app.get("/library/shapes/{filename}")
+async def get_library_shape(filename: str):
+    """
+    Fetch a specific library shape by filename.
+    Converts STEP file to STL and returns it.
+    """
+    # Security: prevent path traversal
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    step_path = LIBRARY_DIR / filename
+    
+    if not step_path.exists():
+        raise HTTPException(status_code=404, detail="Shape not found")
+    
+    if not step_path.suffix.lower() == ".step":
+        raise HTTPException(status_code=400, detail="Only STEP files are supported")
+    
+    try:
+        # Load STEP file using cadquery
+        print(f"Loading STEP file: {step_path}")
+        result = cq.importers.importStep(str(step_path))
+        
+        # Create output directory
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        
+        # Export to STL with coarse tolerance to reduce file size
+        stl_filename = f"library_{filename.replace('.step', '.stl')}"
+        stl_path = output_dir / stl_filename
+        
+        # Use aggressive tolerance values to create smaller meshes
+        # tolerance: how far mesh can deviate from surface (bigger = coarser)
+        # angularTolerance: angular deviation in radians (bigger = coarser)
+        cq.exporters.export(
+            result, 
+            str(stl_path),
+            tolerance=0.5,  # Increased from 0.1 for coarser mesh
+            angularTolerance=0.5  # Increased from 0.1 for coarser mesh
+        )
+        
+        file_size = stl_path.stat().st_size
+        print(f"Converted to STL: {stl_path} (size: {file_size:,} bytes = {file_size/1024/1024:.2f} MB)")
+        
+        # Warn if file is very large
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            print(f"WARNING: Large STL file generated ({file_size/1024/1024:.2f} MB)")
+        
+        return FileResponse(
+            path=stl_path,
+            media_type="application/octet-stream",
+            filename=stl_filename
+        )
+    
+    except Exception as e:
+        print(f"Error converting library shape: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to convert shape: {str(e)}")

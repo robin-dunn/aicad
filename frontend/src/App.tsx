@@ -161,6 +161,71 @@ function App() {
     }
   }
 
+  const handleAddLibraryShape = async (libraryShape: {
+    filename: string
+    display_name: string
+  }) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      console.log("Loading library shape:", libraryShape.filename)
+
+      // Fetch the STL file from the library
+      const downloadResponse = await fetch(
+        `http://localhost:8000/library/shapes/${libraryShape.filename}`
+      )
+
+      if (!downloadResponse.ok) {
+        throw new Error(`Download failed! status: ${downloadResponse.status}`)
+      }
+
+      const blob = await downloadResponse.blob()
+      console.log(`Loaded library STL (${blob.size} bytes), type: ${blob.type}`)
+
+      // Check if blob is too large (e.g., > 50MB)
+      if (blob.size > 50 * 1024 * 1024) {
+        throw new Error(
+          `STL file too large: ${(blob.size / 1024 / 1024).toFixed(
+            2
+          )}MB. Max 50MB.`
+        )
+      }
+
+      // Validate it's actually an STL file by checking the blob
+      const arrayBuffer = await blob.arrayBuffer()
+      const view = new DataView(arrayBuffer)
+
+      // STL files should start with "solid" (ASCII) or have a specific binary header
+      const textDecoder = new TextDecoder()
+      const header = textDecoder.decode(new Uint8Array(arrayBuffer, 0, 5))
+
+      console.log("STL header:", header)
+
+      const url = window.URL.createObjectURL(blob)
+
+      const newShape: Shape = {
+        id: Date.now().toString(),
+        url,
+        position: [position.x, position.y, position.z],
+        rotation: [rotation.x, rotation.y, rotation.z],
+        prompt: `Library: ${libraryShape.display_name}`,
+        params: {}, // Library shapes don't have generation params
+      }
+
+      setShapes((prev) => [...prev, newShape])
+
+      console.log(`Successfully added library shape`)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load library shape"
+      )
+      console.error("Error loading library shape:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSaveProject = async (projectName: string) => {
     if (!projectName.trim()) {
       setError("Please enter a project name")
@@ -511,7 +576,7 @@ function App() {
             shapes={shapes}
             handleRemoveShape={handleRemoveShape}
           />
-          <ObjectLibrary />
+          <ObjectLibrary onAddToScene={handleAddLibraryShape} />
         </div>
 
         {/* Canvas area */}

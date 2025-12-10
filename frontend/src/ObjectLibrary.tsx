@@ -5,7 +5,11 @@ interface LibraryShape {
   display_name: string
 }
 
-export function ObjectLibrary() {
+interface ObjectLibraryProps {
+  onAddToScene: (shape: LibraryShape) => void
+}
+
+export function ObjectLibrary({ onAddToScene }: ObjectLibraryProps) {
   const [shapes, setShapes] = useState<LibraryShape[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -17,14 +21,11 @@ export function ObjectLibrary() {
   const fetchLibraryShapes = async () => {
     setLoading(true)
     setError(null)
-
     try {
       const response = await fetch("http://localhost:8000/library/shapes")
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-
       const data = await response.json()
       setShapes(data.shapes)
     } catch (err) {
@@ -38,15 +39,11 @@ export function ObjectLibrary() {
   return (
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Object Library</h2>
-
       {loading && <p>Loading library...</p>}
-
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
-
       {!loading && !error && shapes.length === 0 && (
         <p style={{ opacity: 0.6 }}>No shapes in library</p>
       )}
-
       {!loading && shapes.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {shapes.map((shape) => (
@@ -56,24 +53,42 @@ export function ObjectLibrary() {
                 padding: "12px",
                 border: "1px solid #333",
                 borderRadius: "4px",
-                cursor: "pointer",
-                transition: "all 0.2s",
                 backgroundColor: "#2a2a2a",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#333"
-                e.currentTarget.style.borderColor = "#3b82f6"
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#2a2a2a"
-                e.currentTarget.style.borderColor = "#333"
-              }}
-              onClick={() => console.log("Clicked:", shape.filename)}
             >
-              <div style={{ fontWeight: 500 }}>{shape.display_name}</div>
-              <div style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-                {shape.filename}
+              <div>
+                <div style={{ fontWeight: 500 }}>{shape.display_name}</div>
+                <div
+                  style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}
+                >
+                  {shape.filename}
+                </div>
               </div>
+              <button
+                onClick={() => onAddToScene(shape)}
+                style={{
+                  padding: "8px 16px",
+                  backgroundColor: "#3b82f6",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  fontSize: "14px",
+                  transition: "background-color 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#2563eb"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#3b82f6"
+                }}
+              >
+                Add to Scene
+              </button>
             </div>
           ))}
         </div>

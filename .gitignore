@@ -15,7 +15,6 @@ build/
 
 # Generated files
 *.stl
-*.step
 *.iges
 output.*
 

@@ -249,380 +249,407 @@ function App() {
     })
   }
 
-  const handleLoadProject = async (name: string) => {
-    setLoading(true)
-    setError(null)
+const handleLoadProject = async (name: string) => {
+  setLoading(true)
+  setError(null)
 
-    // Clear existing shapes
-    handleClearAll()
+  // Clear existing shapes
+  handleClearAll()
 
-    try {
-      const response = await fetch(
-        `http://localhost:8000/project/load?project_name=${encodeURIComponent(
-          name
-        )}`,
-        {
-          method: "POST",
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(`Load failed! status: ${response.status}`)
+  try {
+    const response = await fetch(
+      `http://localhost:8000/projects/load?project_name=${encodeURIComponent(
+        name
+      )}`,
+      {
+        method: "POST",
       }
+    )
 
-      const result = await response.json()
-      console.log("Project loaded:", result)
+    if (!response.ok) {
+      throw new Error(`Load failed! status: ${response.status}`)
+    }
 
-      // Regenerate each shape from saved params
-      for (const shapeData of result.shapes) {
-        // Generate shape from params (not prompt)
-        const generateRequestBody = JSON.stringify(shapeData.params)
-        console.log("generateRequestBody", generateRequestBody)
+    const result = await response.json()
+    console.log("Project loaded:", result)
 
+    // Regenerate each shape
+    for (let idx = 0; idx < result.shapes.length; idx++) {
+      const shapeData = result.shapes[idx]
+
+      // Check if this is a library shape (empty params or starts with "Library:")
+      const isLibraryShape =
+        !shapeData.params ||
+        Object.keys(shapeData.params).length === 0 ||
+        (shapeData.prompt && shapeData.prompt.startsWith("Library:"))
+
+      let blob: Blob
+
+      if (isLibraryShape) {
+        console.log(`Loading library shape ${idx} from project`)
+        // Load from saved STEP file in project
+        const shapeResponse = await fetch(
+          `http://localhost:8000/projects/${encodeURIComponent(
+            name
+          )}/shapes/${idx}`
+        )
+
+        if (!shapeResponse.ok) {
+          console.error(`Failed to load shape ${idx}`)
+          continue
+        }
+
+        blob = await shapeResponse.blob()
+      } else {
+        console.log(`Generating shape ${idx} from params`)
+        // Generate from params for programmatically created shapes
         const generateResponse = await fetch(
           "http://localhost:8000/generate_from_params",
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: generateRequestBody,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(shapeData.params),
           }
         )
 
-        if (!generateResponse.ok) continue
+        if (!generateResponse.ok) {
+          console.error(`Failed to generate shape ${idx}`)
+          continue
+        }
 
-        const data = await generateResponse.json()
-
-        // Download STL
         const downloadResponse = await fetch(
           "http://localhost:8000/download/stl"
         )
-        if (!downloadResponse.ok) continue
-
-        const blob = await downloadResponse.blob()
-        const url = window.URL.createObjectURL(blob)
-
-        const loadedShape: Shape = {
-          id: Date.now().toString() + Math.random(), // Unique ID
-          url,
-          position: shapeData.position || [0, 0, 0],
-          rotation: shapeData.rotation || [0, 0, 0],
-          prompt: shapeData.prompt || "",
-          params: shapeData.params,
+        if (!downloadResponse.ok) {
+          console.error(`Failed to download shape ${idx}`)
+          continue
         }
 
-        setShapes((prev) => [...prev, loadedShape])
-
-        // Small delay to avoid overwhelming the backend
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        blob = await downloadResponse.blob()
       }
 
-      setProjectName(name)
-      setShowProjectDialog(false)
-      alert(`Project "${name}" loaded successfully!`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Load failed")
-      console.error("Error:", err)
-    } finally {
-      setLoading(false)
+      const url = window.URL.createObjectURL(blob)
+
+      const loadedShape: Shape = {
+        id: Date.now().toString() + Math.random(), // Unique ID
+        url,
+        position: shapeData.position || [0, 0, 0],
+        rotation: shapeData.rotation || [0, 0, 0],
+        prompt: shapeData.prompt || "",
+        params: shapeData.params || {},
+      }
+
+      setShapes((prev) => [...prev, loadedShape])
+
+      // Small delay to avoid overwhelming the backend
+      await new Promise((resolve) => setTimeout(resolve, 100))
     }
-  }
 
-  const handleRemoveShape = (id: string) => {
-    setShapes((prev) => {
-      const shape = prev.find((s) => s.id === id)
-      if (shape) {
-        window.URL.revokeObjectURL(shape.url)
-      }
-      return prev.filter((s) => s.id !== id)
-    })
+    setProjectName(name)
+    setShowProjectDialog(false)
+    alert(`Project "${name}" loaded successfully!`)
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Load failed")
+    console.error("Error:", err)
+  } finally {
+    setLoading(false)
   }
+}
 
-  const handleClearAll = () => {
-    shapes.forEach((shape) => {
+const handleRemoveShape = (id: string) => {
+  setShapes((prev) => {
+    const shape = prev.find((s) => s.id === id)
+    if (shape) {
       window.URL.revokeObjectURL(shape.url)
-    })
-    setShapes([])
-  }
+    }
+    return prev.filter((s) => s.id !== id)
+  })
+}
 
-  return (
-    <>
+const handleClearAll = () => {
+  shapes.forEach((shape) => {
+    window.URL.revokeObjectURL(shape.url)
+  })
+  setShapes([])
+}
+
+return (
+  <>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: "20px",
+      }}
+    >
+      <button
+        onClick={() => setDialog({ name: "Open Project", isOpen: true })}
+        disabled={loading}
+        style={{ flex: 1 }}
+      >
+        Open Project
+      </button>
+      <button
+        onClick={() => setDialog({ name: "Save Project", isOpen: true })}
+        disabled={loading}
+        style={{ flex: 1 }}
+      >
+        Save Project
+      </button>
+    </div>
+    <DialogOpenProject
+      isOpen={dialog.name === "Open Project" && dialog.isOpen}
+      onClose={() => setDialog({ name: "", isOpen: false })}
+      onLoad={handleLoadProject}
+      currentProjectName={projectName}
+    />
+    <DialogSaveProject
+      isOpen={dialog.name === "Save Project" && dialog.isOpen}
+      onClose={() => setDialog({ name: "", isOpen: false })}
+      onSave={handleSaveProject}
+      currentProjectName={projectName}
+    />
+    <div
+      style={{
+        display: "flex",
+        gap: "20px",
+        height: "calc(100vh - 150px)",
+        flexGrow: 1,
+        padding: "1rem",
+      }}
+    >
       <div
         style={{
+          width: "30%",
           display: "flex",
-          flexDirection: "row",
-          alignItems: "flex-start",
+          flexDirection: "column",
           gap: "20px",
+          overflowY: "auto",
         }}
       >
-        <button
-          onClick={() => setDialog({ name: "Open Project", isOpen: true })}
-          disabled={loading}
-          style={{ flex: 1 }}
-        >
-          Open Project
-        </button>
-        <button
-          onClick={() => setDialog({ name: "Save Project", isOpen: true })}
-          disabled={loading}
-          style={{ flex: 1 }}
-        >
-          Save Project
-        </button>
-      </div>
-      <DialogOpenProject
-        isOpen={dialog.name === "Open Project" && dialog.isOpen}
-        onClose={() => setDialog({ name: "", isOpen: false })}
-        onLoad={() => {}}
-        currentProjectName={projectName}
-      />
-      <DialogSaveProject
-        isOpen={dialog.name === "Save Project" && dialog.isOpen}
-        onClose={() => setDialog({ name: "", isOpen: false })}
-        onSave={handleSaveProject}
-        currentProjectName={projectName}
-      />
-      <div
-        style={{
-          display: "flex",
-          gap: "20px",
-          height: "calc(100vh - 150px)",
-          flexGrow: 1,
-          padding: "1rem",
-        }}
-      >
-        <div
-          style={{
-            width: "30%",
-            display: "flex",
-            flexDirection: "column",
-            gap: "20px",
-            overflowY: "auto",
-          }}
-        >
-          {/* Existing Add Shape Card */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Add Shape</h2>
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. cylinder radius 5 height 10 lying"
-              style={{
-                width: "100%",
-                padding: "8px",
-                marginBottom: "10px",
-                fontSize: "16px",
-              }}
-            />
+        {/* Existing Add Shape Card */}
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Add Shape</h2>
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="e.g. cylinder radius 5 height 10 lying"
+            style={{
+              width: "100%",
+              padding: "8px",
+              marginBottom: "10px",
+              fontSize: "16px",
+            }}
+          />
 
-            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>Position</h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  X
-                </label>
-                <input
-                  type="number"
-                  value={position.x}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      x: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Y
-                </label>
-                <input
-                  type="number"
-                  value={position.y}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      y: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Z
-                </label>
-                <input
-                  type="number"
-                  value={position.z}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      z: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
+          <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>Position</h3>
+          <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                X
+              </label>
+              <input
+                type="number"
+                value={position.x}
+                onChange={(e) =>
+                  setPosition({
+                    ...position,
+                    x: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
             </div>
-
-            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>
-              Rotation (degrees)
-            </h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  X
-                </label>
-                <input
-                  type="number"
-                  value={rotation.x}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      x: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Y
-                </label>
-                <input
-                  type="number"
-                  value={rotation.y}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      y: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Z
-                </label>
-                <input
-                  type="number"
-                  value={rotation.z}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      z: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                Y
+              </label>
+              <input
+                type="number"
+                value={position.y}
+                onChange={(e) =>
+                  setPosition({
+                    ...position,
+                    y: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
             </div>
-
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              style={{ width: "100%", marginBottom: "10px" }}
-            >
-              {loading ? "Generating..." : "Add Shape"}
-            </button>
-
-            {error && (
-              <p style={{ color: "red", marginTop: "10px" }}>Error: {error}</p>
-            )}
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                Z
+              </label>
+              <input
+                type="number"
+                value={position.z}
+                onChange={(e) =>
+                  setPosition({
+                    ...position,
+                    z: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
+            </div>
           </div>
 
-          <SceneObjectsList
-            shapes={shapes}
-            handleRemoveShape={handleRemoveShape}
-          />
-          <ObjectLibrary onAddToScene={handleAddLibraryShape} />
-        </div>
-
-        {/* Canvas area */}
-        <div
-          style={{
-            width: "70%",
-            border: "1px solid white",
-            borderRadius: "4px",
-            overflow: "hidden",
-          }}
-        >
-          {shapes.length > 0 ? (
-            <Canvas camera={{ position: [50, 50, 50], fov: 50 }}>
-              <ambientLight intensity={0.5} />
-              <directionalLight position={[10, 10, 5]} intensity={1} />
-              <directionalLight position={[-10, -10, -5]} intensity={0.5} />
-
-              <AxisHelper />
-
-              {shapes.map((shape) => (
-                <STLModel
-                  key={shape.id}
-                  url={shape.url}
-                  position={shape.position}
-                  rotation={shape.rotation}
-                />
-              ))}
-              <CameraController shapes={shapes} />
-            </Canvas>
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: 0.5,
-              }}
-            >
-              <p>Add shapes to see them rendered here</p>
+          <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>
+            Rotation (degrees)
+          </h3>
+          <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                X
+              </label>
+              <input
+                type="number"
+                value={rotation.x}
+                onChange={(e) =>
+                  setRotation({
+                    ...rotation,
+                    x: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
             </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                Y
+              </label>
+              <input
+                type="number"
+                value={rotation.y}
+                onChange={(e) =>
+                  setRotation({
+                    ...rotation,
+                    y: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "14px",
+                }}
+              >
+                Z
+              </label>
+              <input
+                type="number"
+                value={rotation.z}
+                onChange={(e) =>
+                  setRotation({
+                    ...rotation,
+                    z: parseFloat(e.target.value) || 0,
+                  })
+                }
+                style={{ width: "100%", padding: "8px" }}
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            style={{ width: "100%", marginBottom: "10px" }}
+          >
+            {loading ? "Generating..." : "Add Shape"}
+          </button>
+
+          {error && (
+            <p style={{ color: "red", marginTop: "10px" }}>Error: {error}</p>
           )}
         </div>
+
+        <SceneObjectsList
+          shapes={shapes}
+          handleRemoveShape={handleRemoveShape}
+        />
+        <ObjectLibrary onAddToScene={handleAddLibraryShape} />
       </div>
-    </>
-  )
+
+      {/* Canvas area */}
+      <div
+        style={{
+          width: "70%",
+          border: "1px solid white",
+          borderRadius: "4px",
+          overflow: "hidden",
+        }}
+      >
+        {shapes.length > 0 ? (
+          <Canvas camera={{ position: [50, 50, 50], fov: 50 }}>
+            <ambientLight intensity={0.5} />
+            <directionalLight position={[10, 10, 5]} intensity={1} />
+            <directionalLight position={[-10, -10, -5]} intensity={0.5} />
+
+            <AxisHelper />
+
+            {shapes.map((shape) => (
+              <STLModel
+                key={shape.id}
+                url={shape.url}
+                position={shape.position}
+                rotation={shape.rotation}
+              />
+            ))}
+            <CameraController shapes={shapes} />
+          </Canvas>
+        ) : (
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: 0.5,
+            }}
+          >
+            <p>Add shapes to see them rendered here</p>
+          </div>
+        )}
+      </div>
+    </div>
+  </>
+)
 }
 
 export default App

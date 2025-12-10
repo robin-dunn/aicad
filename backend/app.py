@@ -51,7 +51,7 @@ async def list_projects():
     return {"projects": projects}
 
 
-@app.post("/project/save")
+@app.post("/projects/save")
 async def save_project(project: ProjectFile):
     """Save project with B-Rep data"""
     project_dir = Path(f"{projects_dir}/{project.name}")
@@ -65,15 +65,41 @@ async def save_project(project: ProjectFile):
     
     # Save each shape as STEP (B-Rep format)
     for idx, shape_data in enumerate(project.shapes):
-        model = generate_cad(shape_data["params"])
-        step_path = project_dir / f"shape_{idx}.step"
-        model.val().exportStep(str(step_path))
+        params = shape_data.get("params", {})
+        prompt = shape_data.get("prompt", "")
+        
+        # Check if this is a library shape (indicated by "Library:" in prompt and empty params)
+        is_library_shape = prompt.startswith("Library:") and not params
+        
+        if is_library_shape:
+            # Extract library filename from prompt (e.g., "Library: filename.step")
+            library_filename = prompt.replace("Library:", "").strip()
+            if not library_filename.endswith(".step"):
+                library_filename += ".step"
+            
+            # Copy library STEP file to project directory
+            source_path = LIBRARY_DIR / library_filename
+            step_path = project_dir / f"shape_{idx}.step"
+            
+            if source_path.exists():
+                import shutil
+                shutil.copy(source_path, step_path)
+            else:
+                raise HTTPException(status_code=404, detail=f"Library shape not found: {library_filename}")
+        else:
+            # Generate CAD from params for programmatically created shapes
+            if not params or "shape" not in params:
+                raise HTTPException(status_code=400, detail=f"Shape {idx} has no valid params")
+            
+            model = generate_cad(params)
+            step_path = project_dir / f"shape_{idx}.step"
+            model.val().exportStep(str(step_path))
         
         metadata["shapes"].append({
-            "params": shape_data["params"],  # Nested params
+            "params": params,
             "position": shape_data.get("position", [0, 0, 0]),
             "rotation": shape_data.get("rotation", [0, 0, 0]),
-            "prompt": shape_data.get("prompt", ""),
+            "prompt": prompt,
             "brep_file": f"shape_{idx}.step"
         })
     
@@ -83,7 +109,7 @@ async def save_project(project: ProjectFile):
     
     return {"success": True, "path": str(project_dir)}
 
-@app.post("/project/load")
+@app.post("/projects/load")
 async def load_project(project_name: str):
     """Load project from B-Rep data"""
     project_dir = Path(f"{projects_dir}/{project_name}")
@@ -93,6 +119,66 @@ async def load_project(project_name: str):
     
     # Return the shapes exactly as they were saved
     return {"success": True, "shapes": metadata["shapes"]}
+
+
+@app.get("/projects/{project_name}/shapes/{shape_index}")
+async def get_project_shape(project_name: str, shape_index: int):
+    """Get a specific shape from a saved project as STL"""
+    project_dir = projects_dir / project_name
+    
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+    
+    # Load metadata to get the STEP file name
+    project_file = project_dir / "project.json"
+    if not project_file.exists():
+        raise HTTPException(status_code=404, detail="Project metadata not found")
+    
+    with open(project_file) as f:
+        metadata = json.load(f)
+    
+    if shape_index >= len(metadata["shapes"]):
+        raise HTTPException(status_code=404, detail=f"Shape index {shape_index} not found in project")
+    
+    shape_data = metadata["shapes"][shape_index]
+    step_path = project_dir / shape_data["brep_file"]
+    
+    if not step_path.exists():
+        raise HTTPException(status_code=404, detail=f"STEP file not found: {shape_data['brep_file']}")
+    
+    try:
+        # Load STEP and convert to STL
+        print(f"Loading project shape: {step_path}")
+        result = cq.importers.importStep(str(step_path))
+        
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        
+        stl_filename = f"project_{project_name}_shape_{shape_index}.stl"
+        stl_path = output_dir / stl_filename
+        
+        # Use same tolerance as library shapes for consistency
+        cq.exporters.export(
+            result, 
+            str(stl_path),
+            tolerance=0.5,
+            angularTolerance=0.5
+        )
+        
+        file_size = stl_path.stat().st_size
+        print(f"Converted project shape to STL: {stl_path} (size: {file_size:,} bytes = {file_size/1024/1024:.2f} MB)")
+        
+        return FileResponse(
+            path=stl_path,
+            media_type="application/octet-stream",
+            filename=stl_filename
+        )
+    
+    except Exception as e:
+        print(f"Error converting project shape: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to convert shape: {str(e)}")
 
 
 @app.post("/generate_from_params")

@@ -4,6 +4,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import cadquery as cq
 import math
+import json
+from pathlib import Path
+
+
+LIBRARY_DIR = Path("library")
 
 app = FastAPI()
 
@@ -17,10 +22,6 @@ app.add_middleware(
 
 class ShapeRequest(BaseModel):
     prompt: str
-
-
-import json
-from pathlib import Path
 
 class ProjectFile(BaseModel):
     name: str
@@ -182,3 +183,23 @@ async def download_stl():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/library/shapes")
+async def list_library_shapes():
+    """List all STEP files in the library directory"""
+    if not LIBRARY_DIR.exists():
+        LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+        return {"shapes": []}
+    
+    shapes = []
+    
+    # Find all .step files
+    for file_path in LIBRARY_DIR.glob("*.step"):
+        shapes.append({
+            "filename": file_path.name,
+            "display_name": file_path.stem.replace("_", " ").title(),
+        })
+    
+    shapes.sort(key=lambda x: x["filename"])
+    return {"shapes": shapes}

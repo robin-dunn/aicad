@@ -10,6 +10,7 @@ import { useSaveProject } from "./hooks/useProjects"
 import { DialogSaveProject } from "./DialogSaveProject"
 import type { Shape } from "./models"
 import { SceneObjectsList } from "./SceneObjectsList"
+import { ObjectLibrary } from "./ObjectLibrary"
 
 function STLModel({
   url,
@@ -510,6 +511,7 @@ function App() {
             shapes={shapes}
             handleRemoveShape={handleRemoveShape}
           />
+          <ObjectLibrary />
         </div>
 
         {/* Canvas area */}

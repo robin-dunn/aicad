@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
 import { Box3, PerspectiveCamera, Vector3, Plane } from "three"
+import * as THREE from "three"
 import "./App.css"
 import { DialogOpenProject } from "./DialogOpenProject"
 import { useSaveProject } from "./hooks/useProjects"
@@ -215,14 +216,49 @@ function CameraController({
   )
 }
 
-function Ground() {
+function Ground({
+  onGroundClick,
+  onGeometryReady,
+}: {
+  onGroundClick?: (point: Vector3) => void
+  onGeometryReady?: (geometry: THREE.BufferGeometry) => void
+}) {
+  const meshRef = useRef<any>(null)
+  const [geometry, setGeometry] = useState<any>(null)
+
+  useEffect(() => {
+    // Create a subdivided plane for terrain sculpting
+    const geo = new THREE.PlaneGeometry(100, 100, 50, 50)
+    setGeometry(geo)
+    if (onGeometryReady) {
+      onGeometryReady(geo)
+    }
+  }, [onGeometryReady])
+
+  const handleClick = (e: any) => {
+    if (onGroundClick) {
+      e.stopPropagation()
+      const point = e.point as Vector3
+      onGroundClick(point)
+    }
+  }
+
+  if (!geometry) return null
+
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-      <planeGeometry args={[100, 100]} />
+    <mesh
+      ref={meshRef}
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, 0, 0]}
+      receiveShadow
+      onClick={handleClick}
+      geometry={geometry}
+    >
       <meshStandardMaterial
         color="#4a7c59"
         roughness={0.8}
         metalness={0.2}
+        wireframe={false}
       />
     </mesh>
   )
@@ -255,6 +291,10 @@ function App() {
   const [shapes, setShapes] = useState<Shape[]>([])
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [isDraggingShape, setIsDraggingShape] = useState(false)
+  const [terrainTool, setTerrainTool] = useState<"none" | "raise" | "lower">(
+    "none"
+  )
+  const [groundGeometry, setGroundGeometry] = useState<THREE.BufferGeometry | null>(null)
   const saveProjectMutation = useSaveProject()
 
   // New state for project management
@@ -602,6 +642,37 @@ function App() {
     )
   }
 
+  const handleGroundClick = (point: Vector3) => {
+    if (terrainTool === "none" || !groundGeometry) return
+
+    const positionAttribute = groundGeometry.getAttribute("position")
+    const strength = terrainTool === "raise" ? 0.5 : -0.5
+    const radius = 5 // Influence radius
+
+    // Modify vertices within radius
+    for (let i = 0; i < positionAttribute.count; i++) {
+      const x = positionAttribute.getX(i)
+      const y = positionAttribute.getY(i)
+
+      // Calculate distance from click point (note: ground is rotated)
+      const dx = x - point.x
+      const dy = y - point.z
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      if (distance < radius) {
+        // Gaussian falloff for smooth hills/pits
+        const falloff = Math.exp(-(distance * distance) / (radius * radius))
+        const currentZ = positionAttribute.getZ(i)
+        const newZ = currentZ + strength * falloff
+
+        positionAttribute.setZ(i, newZ)
+      }
+    }
+
+    positionAttribute.needsUpdate = true
+    groundGeometry.computeVertexNormals()
+  }
+
   // Get selected shape data
   const selectedShape = shapes.find((s) => s.id === selectedShapeId)
 
@@ -609,6 +680,61 @@ function App() {
 
   return (
     <>
+      {/* Terrain Tools Toolbar */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: "10px",
+          padding: "10px",
+          backgroundColor: "#1a1a1a",
+          borderBottom: "1px solid #333",
+        }}
+      >
+        <span style={{ marginRight: "10px", fontWeight: "bold" }}>
+          Terrain Tools:
+        </span>
+        <button
+          onClick={() =>
+            setTerrainTool(terrainTool === "raise" ? "none" : "raise")
+          }
+          style={{
+            padding: "8px 16px",
+            backgroundColor: terrainTool === "raise" ? "#10b981" : "#374151",
+            color: "white",
+            border: terrainTool === "raise" ? "2px solid #34d399" : "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontWeight: terrainTool === "raise" ? "bold" : "normal",
+          }}
+        >
+          ⛰️ Raise Ground
+        </button>
+        <button
+          onClick={() =>
+            setTerrainTool(terrainTool === "lower" ? "none" : "lower")
+          }
+          style={{
+            padding: "8px 16px",
+            backgroundColor: terrainTool === "lower" ? "#ef4444" : "#374151",
+            color: "white",
+            border: terrainTool === "lower" ? "2px solid #f87171" : "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontWeight: terrainTool === "lower" ? "bold" : "normal",
+          }}
+        >
+          🕳️ Lower Ground
+        </button>
+        {terrainTool !== "none" && (
+          <span style={{ marginLeft: "10px", color: "#9ca3af", fontSize: "14px" }}>
+            Click on the ground to sculpt terrain
+          </span>
+        )}
+      </div>
+
+      {/* Project Management Buttons */}
       <div
         style={{
           display: "flex",
@@ -710,7 +836,10 @@ function App() {
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <directionalLight position={[-10, -10, -5]} intensity={0.5} />
 
-            <Ground />
+            <Ground
+              onGroundClick={handleGroundClick}
+              onGeometryReady={setGroundGeometry}
+            />
             <AxisHelper />
 
             {shapes.map((shape) => (

@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import cadquery as cq
 import math
 import json
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 
 LIBRARY_DIR = Path("library")
@@ -26,6 +28,14 @@ class ShapeRequest(BaseModel):
 class ProjectFile(BaseModel):
     name: str
     shapes: list[dict]  # Each shape has params + optional STEP data
+
+class PlanViewRequest(BaseModel):
+    shapes: list[dict]  # Each shape has position, rotation, params, prompt
+    terrain: list[dict] | None = None  # Optional terrain data
+
+class CustomShapeRequest(BaseModel):
+    name: str
+    primitives: list[dict]  # Each primitive has type, dimensions, position, operation
 
 projects_dir = Path("data/projects")
 
@@ -388,3 +398,232 @@ async def get_library_shape(filename: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to convert shape: {str(e)}")
+
+
+@app.post("/export/plan-view")
+async def export_plan_view(request: PlanViewRequest):
+    """
+    Generate a 2D bird's eye plan view of the project.
+    Returns a PNG image showing shapes positioned from above.
+    """
+    # Image settings
+    img_width = 2000
+    img_height = 2000
+    pixels_per_unit = 15  # Scale factor
+
+    # Create image with white background
+    img = Image.new('RGB', (img_width, img_height), color='white')
+    draw = ImageDraw.Draw(img)
+
+    # Calculate center offset
+    center_x = img_width // 2
+    center_y = img_height // 2
+
+    # Draw ground area (100x100 units centered)
+    ground_size = 100 * pixels_per_unit
+    ground_left = center_x - ground_size // 2
+    ground_top = center_y - ground_size // 2
+    ground_right = center_x + ground_size // 2
+    ground_bottom = center_y + ground_size // 2
+
+    # Draw grass ground
+    draw.rectangle(
+        [ground_left, ground_top, ground_right, ground_bottom],
+        fill='#7cb342',  # Grass green
+        outline='#558b2f',
+        width=3
+    )
+
+    # Draw grid
+    grid_spacing = 10 * pixels_per_unit
+    for i in range(11):
+        # Vertical lines
+        x = ground_left + i * grid_spacing
+        draw.line([(x, ground_top), (x, ground_bottom)], fill='#9ccc65', width=1)
+        # Horizontal lines
+        y = ground_top + i * grid_spacing
+        draw.line([(ground_left, y), (ground_right, y)], fill='#9ccc65', width=1)
+
+    # Draw each shape
+    for shape in request.shapes:
+        position = shape.get('position', [0, 0, 0])
+        params = shape.get('params', {})
+        prompt = shape.get('prompt', '')
+
+        # Convert world coordinates to image coordinates
+        # In 3D: X is left-right, Z is forward-back, Y is up-down
+        # In 2D top view: X maps to image X, Z maps to image Y
+        img_x = center_x + int(position[0] * pixels_per_unit)
+        img_y = center_y - int(position[2] * pixels_per_unit)  # Flip Z for image coords
+
+        # Determine shape type and size
+        shape_type = params.get('shape', 'box')
+
+        if shape_type == 'cylinder' or shape_type == 'sphere':
+            radius = params.get('radius', 5)
+            radius_px = int(radius * pixels_per_unit)
+
+            # Draw circle
+            draw.ellipse(
+                [img_x - radius_px, img_y - radius_px,
+                 img_x + radius_px, img_y + radius_px],
+                fill='#2196f3',  # Blue
+                outline='#1565c0',
+                width=2
+            )
+
+        elif shape_type == 'box' or 'Library:' in prompt:
+            # For boxes and library shapes, estimate dimensions
+            if 'Library:' in prompt:
+                # Default size for library shapes
+                width = 10
+                depth = 10
+            else:
+                width = params.get('width', 10)
+                depth = params.get('depth', 10)
+
+            half_width = int(width * pixels_per_unit / 2)
+            half_depth = int(depth * pixels_per_unit / 2)
+
+            # Draw rectangle
+            draw.rectangle(
+                [img_x - half_width, img_y - half_depth,
+                 img_x + half_width, img_y + half_depth],
+                fill='#ff9800',  # Orange
+                outline='#e65100',
+                width=2
+            )
+
+        # Draw center point
+        draw.ellipse(
+            [img_x - 3, img_y - 3, img_x + 3, img_y + 3],
+            fill='red'
+        )
+
+    # Add title and scale
+    try:
+        # Try to use a nice font, fall back to default if not available
+        font_large = ImageFont.truetype("Arial.ttf", 40)
+        font_small = ImageFont.truetype("Arial.ttf", 24)
+    except:
+        font_large = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    # Title
+    draw.text((20, 20), "Garden Plan View", fill='black', font=font_large)
+
+    # Scale indicator
+    scale_length = 10 * pixels_per_unit  # 10 units
+    scale_x = 20
+    scale_y = img_height - 80
+    draw.line([(scale_x, scale_y), (scale_x + scale_length, scale_y)], fill='black', width=3)
+    draw.line([(scale_x, scale_y - 10), (scale_x, scale_y + 10)], fill='black', width=3)
+    draw.line([(scale_x + scale_length, scale_y - 10), (scale_x + scale_length, scale_y + 10)], fill='black', width=3)
+    draw.text((scale_x, scale_y + 15), "10 units", fill='black', font=font_small)
+
+    # Legend
+    legend_x = img_width - 250
+    legend_y = 20
+    draw.text((legend_x, legend_y), "Legend:", fill='black', font=font_small)
+
+    # Cylinder/Sphere
+    draw.ellipse([legend_x, legend_y + 30, legend_x + 30, legend_y + 60], fill='#2196f3', outline='#1565c0', width=2)
+    draw.text((legend_x + 40, legend_y + 35), "Cylinder/Sphere", fill='black', font=font_small)
+
+    # Box
+    draw.rectangle([legend_x, legend_y + 70, legend_x + 30, legend_y + 100], fill='#ff9800', outline='#e65100', width=2)
+    draw.text((legend_x + 40, legend_y + 75), "Box/Structure", fill='black', font=font_small)
+
+    # Convert to bytes
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+
+    return StreamingResponse(img_byte_arr, media_type="image/png")
+
+
+@app.post("/library/save-custom")
+async def save_custom_shape(request: CustomShapeRequest):
+    """
+    Create a custom shape from primitives using CSG operations and save to library.
+    """
+    if not request.name.strip():
+        raise HTTPException(status_code=400, detail="Shape name is required")
+
+    if len(request.primitives) == 0:
+        raise HTTPException(status_code=400, detail="At least one primitive is required")
+
+    try:
+        # Start with None - will be initialized with first "add" operation
+        result_shape = None
+
+        for idx, prim in enumerate(request.primitives):
+            prim_type = prim.get('type')
+            operation = prim.get('operation', 'add')
+            position = prim.get('position', [0, 0, 0])
+
+            # Create the primitive shape
+            if prim_type == 'box':
+                width = prim.get('width', 10)
+                height = prim.get('height', 10)
+                depth = prim.get('depth', 10)
+                shape = cq.Workplane("XY").box(width, height, depth)
+            elif prim_type == 'cylinder':
+                radius = prim.get('radius', 5)
+                height = prim.get('height', 10)
+                shape = cq.Workplane("XY").cylinder(height, radius)
+            elif prim_type == 'sphere':
+                radius = prim.get('radius', 5)
+                shape = cq.Workplane("XY").sphere(radius)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown primitive type: {prim_type}")
+
+            # Move to position
+            shape = shape.translate(tuple(position))
+
+            # Apply CSG operation
+            if operation == 'add':
+                if result_shape is None:
+                    # First shape
+                    result_shape = shape
+                else:
+                    # Union with existing shape
+                    result_shape = result_shape.union(shape)
+            elif operation == 'subtract':
+                if result_shape is None:
+                    raise HTTPException(status_code=400, detail="Cannot subtract without an existing shape. Add a shape first.")
+                # Cut from existing shape
+                result_shape = result_shape.cut(shape)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown operation: {operation}")
+
+        if result_shape is None:
+            raise HTTPException(status_code=400, detail="No valid shape was created")
+
+        # Ensure library directory exists
+        LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Sanitize filename
+        safe_name = "".join(c for c in request.name if c.isalnum() or c in (' ', '-', '_')).strip()
+        safe_name = safe_name.replace(' ', '_').lower()
+
+        # Save as STEP file
+        step_filename = f"{safe_name}.step"
+        step_path = LIBRARY_DIR / step_filename
+
+        # Export to STEP format
+        result_shape.val().exportStep(str(step_path))
+
+        return {
+            "success": True,
+            "filename": step_filename,
+            "message": f"Custom shape '{request.name}' saved to library"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating custom shape: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create shape: {str(e)}")

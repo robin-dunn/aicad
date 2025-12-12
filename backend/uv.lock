@@ -1873,6 +1873,7 @@ dependencies = [
     { name = "cadquery" },
     { name = "fastapi" },
     { name = "numpy-stl" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1882,6 +1883,7 @@ requires-dist = [
     { name = "cadquery", specifier = ">=2.4.0" },
     { name = "fastapi", specifier = ">=0.104.0" },
     { name = "numpy-stl", specifier = ">=3.1.0" },
+    { name = "pillow", specifier = ">=10.0.0" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
 ]

@@ -13,6 +13,7 @@ import type { Shape } from "./models"
 import { SceneObjectsList } from "./SceneObjectsList"
 import { ObjectLibrary } from "./ObjectLibrary"
 import { FormAddShape } from "./FormAddShape"
+import { Link } from "react-router-dom"
 
 function STLModel({
   id,
@@ -642,6 +643,50 @@ function App() {
     )
   }
 
+  const handleExportPlanView = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch("http://localhost:8000/export/plan-view", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          shapes: shapes.map((shape) => ({
+            position: shape.position,
+            rotation: shape.rotation,
+            params: shape.params,
+            prompt: shape.prompt,
+          })),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Export failed! status: ${response.status}`)
+      }
+
+      // Download the image
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `garden-plan-${Date.now()}.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+
+      alert("Plan view exported successfully!")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed")
+      console.error("Error:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleGroundClick = (point: Vector3) => {
     if (terrainTool === "none" || !groundGeometry) return
 
@@ -732,6 +777,23 @@ function App() {
             Click on the ground to sculpt terrain
           </span>
         )}
+        <div style={{ marginLeft: "auto" }}>
+          <Link to="/shape-editor">
+            <button
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "#8b5cf6",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              🛠️ Shape Editor
+            </button>
+          </Link>
+        </div>
       </div>
 
       {/* Project Management Buttons */}
@@ -756,6 +818,18 @@ function App() {
           style={{ flex: 1 }}
         >
           Save Project
+        </button>
+        <button
+          onClick={handleExportPlanView}
+          disabled={loading || shapes.length === 0}
+          style={{
+            flex: 1,
+            backgroundColor: shapes.length === 0 ? "#4b5563" : "#8b5cf6",
+            cursor: shapes.length === 0 ? "not-allowed" : "pointer",
+          }}
+          title={shapes.length === 0 ? "Add shapes to export" : "Export 2D plan view"}
+        >
+          📐 Export Plan View
         </button>
       </div>
       <DialogOpenProject

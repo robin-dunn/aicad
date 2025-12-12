@@ -142,6 +142,71 @@ function App() {
     console.log("Selected shape ID changed to:", selectedShapeId)
   }, [selectedShapeId])
 
+  // Keyboard controls for moving selected shape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!selectedShapeId) return
+
+      // Check if user is typing in an input field
+      const target = e.target as HTMLElement
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
+
+      const moveStep = 1 // Movement step size
+
+      let dx = 0
+      let dy = 0
+      let dz = 0
+
+      switch (e.key) {
+        case "ArrowLeft":
+          dx = -moveStep
+          e.preventDefault()
+          break
+        case "ArrowRight":
+          dx = moveStep
+          e.preventDefault()
+          break
+        case "ArrowUp":
+          if (e.shiftKey) {
+            dy = moveStep // Shift+Up moves vertically up
+          } else {
+            dz = -moveStep // Up moves forward in 3D space
+          }
+          e.preventDefault()
+          break
+        case "ArrowDown":
+          if (e.shiftKey) {
+            dy = -moveStep // Shift+Down moves vertically down
+          } else {
+            dz = moveStep // Down moves backward in 3D space
+          }
+          e.preventDefault()
+          break
+        default:
+          return
+      }
+
+      // Update the selected shape's position
+      setShapes((prevShapes) =>
+        prevShapes.map((shape) =>
+          shape.id === selectedShapeId
+            ? {
+                ...shape,
+                position: [
+                  shape.position[0] + dx,
+                  shape.position[1] + dy,
+                  shape.position[2] + dz,
+                ] as [number, number, number],
+              }
+            : shape
+        )
+      )
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [selectedShapeId])
+
   const handleGenerate = async () => {
     setLoading(true)
     setError(null)
@@ -614,6 +679,24 @@ function App() {
                 }}
               >
                 {selectedShape.id}
+              </p>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                Keyboard:
+              </span>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "12px",
+                  fontWeight: "400",
+                  color: "#d1d5db",
+                }}
+              >
+                ← → ↑ ↓ to move
+                <br />
+                Shift+↑↓ for vertical
               </p>
             </div>
           </div>

@@ -11,6 +11,7 @@ import { DialogSaveProject } from "./DialogSaveProject"
 import type { Shape } from "./models"
 import { SceneObjectsList } from "./SceneObjectsList"
 import { ObjectLibrary } from "./ObjectLibrary"
+import { FormAddShape } from "./FormAddShape"
 
 function STLModel({
   id,
@@ -468,7 +469,7 @@ function App() {
         style={{
           display: "flex",
           gap: "20px",
-          height: "calc(100vh - 200px)",
+          height: "calc(100vh - 250px)",
           flexGrow: 1,
           padding: "1rem",
         }}
@@ -482,214 +483,17 @@ function App() {
             overflowY: "auto",
           }}
         >
-          {/* Existing Add Shape Card */}
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Add Shape</h2>
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. cylinder radius 5 height 10 lying"
-              style={{
-                width: "100%",
-                padding: "8px",
-                marginBottom: "10px",
-                fontSize: "16px",
-              }}
-            />
-
-            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>Position</h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  X
-                </label>
-                <input
-                  type="number"
-                  value={position.x}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      x: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Y
-                </label>
-                <input
-                  type="number"
-                  value={position.y}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      y: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Z
-                </label>
-                <input
-                  type="number"
-                  value={position.z}
-                  onChange={(e) =>
-                    setPosition({
-                      ...position,
-                      z: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-            </div>
-
-            <h3 style={{ fontSize: "14px", marginBottom: "5px" }}>
-              Rotation (degrees)
-            </h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  X
-                </label>
-                <input
-                  type="number"
-                  value={rotation.x}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      x: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Y
-                </label>
-                <input
-                  type="number"
-                  value={rotation.y}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      y: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "4px",
-                    fontSize: "14px",
-                  }}
-                >
-                  Z
-                </label>
-                <input
-                  type="number"
-                  value={rotation.z}
-                  onChange={(e) =>
-                    setRotation({
-                      ...rotation,
-                      z: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  style={{ width: "100%", padding: "8px" }}
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              style={{ width: "100%", marginBottom: "10px" }}
-            >
-              {loading ? "Generating..." : "Add Shape"}
-            </button>
-
-            {error && (
-              <p style={{ color: "red", marginTop: "10px" }}>Error: {error}</p>
-            )}
-          </div>
-
-          {/* Selected Shape Inspector */}
-          {selectedShape && (
-            <div
-              className="card"
-              style={{
-                backgroundColor: "#1f2937",
-                border: "2px solid #fbbf24",
-              }}
-            >
-              <h2 style={{ marginTop: 0, color: "#fbbf24" }}>
-                ✓ Selected Shape
-              </h2>
-              <p style={{ fontSize: "14px", marginBottom: "10px" }}>
-                <strong>ID:</strong> {selectedShape.id}
-              </p>
-              <p style={{ fontSize: "14px", marginBottom: "10px" }}>
-                <strong>Prompt:</strong> {selectedShape.prompt}
-              </p>
-              <p style={{ fontSize: "14px", marginBottom: "10px" }}>
-                <strong>Position:</strong> [{selectedShape.position.join(", ")}]
-              </p>
-              <p style={{ fontSize: "14px", marginBottom: "10px" }}>
-                <strong>Rotation:</strong> [{selectedShape.rotation.join(", ")}
-                ]°
-              </p>
-              <button
-                onClick={() => handleRemoveShape(selectedShape.id)}
-                style={{
-                  width: "100%",
-                  backgroundColor: "#ef4444",
-                  marginTop: "10px",
-                }}
-              >
-                Delete Selected Shape
-              </button>
-            </div>
-          )}
+          <FormAddShape
+            prompt={prompt}
+            setPrompt={setPrompt}
+            position={position}
+            setPosition={setPosition}
+            rotation={rotation}
+            setRotation={setRotation}
+            handleGenerate={handleGenerate}
+            loading={loading}
+            error={error}
+          />
 
           <SceneObjectsList
             shapes={shapes}
@@ -746,6 +550,92 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* Bottom Toolbar - Selected Shape Inspector */}
+      {selectedShape && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: "#1f2937",
+            borderTop: "2px solid #fbbf24",
+            padding: "1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "2rem",
+            zIndex: 1000,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ color: "#fbbf24", fontSize: "20px" }}>✓</span>
+            <h3 style={{ margin: 0, color: "#fbbf24", fontSize: "16px" }}>
+              Selected Shape
+            </h3>
+          </div>
+
+          <div style={{ display: "flex", gap: "2rem", flex: 1 }}>
+            <div>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                Prompt:
+              </span>
+              <p style={{ margin: 0, fontSize: "14px", fontWeight: "500" }}>
+                {selectedShape.prompt}
+              </p>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                Position:
+              </span>
+              <p style={{ margin: 0, fontSize: "14px", fontWeight: "500" }}>
+                [{selectedShape.position.join(", ")}]
+              </p>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                Rotation:
+              </span>
+              <p style={{ margin: 0, fontSize: "14px", fontWeight: "500" }}>
+                [{selectedShape.rotation.join(", ")}]°
+              </p>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>ID:</span>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  fontFamily: "monospace",
+                }}
+              >
+                {selectedShape.id}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => handleRemoveShape(selectedShape.id)}
+            style={{
+              backgroundColor: "#ef4444",
+              padding: "0.5rem 1.5rem",
+              border: "none",
+              borderRadius: "4px",
+              color: "white",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Delete Shape
+          </button>
+        </div>
+      )}
     </>
   )
 }

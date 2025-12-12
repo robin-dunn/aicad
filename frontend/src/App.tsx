@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import { STLLoader } from "three/addons/loaders/STLLoader.js"
 import { useLoader } from "@react-three/fiber"
-import { Box3, PerspectiveCamera, Vector3 } from "three"
+import { Box3, PerspectiveCamera, Vector3, Plane } from "three"
 import "./App.css"
 import { DialogOpenProject } from "./DialogOpenProject"
 import { useSaveProject } from "./hooks/useProjects"
@@ -20,6 +20,9 @@ function STLModel({
   rotation,
   isSelected,
   onClick,
+  onPositionChange,
+  onDragStart,
+  onDragEnd,
 }: {
   id: string
   url: string
@@ -27,8 +30,15 @@ function STLModel({
   rotation: [number, number, number]
   isSelected: boolean
   onClick: () => void
+  onPositionChange: (newPosition: [number, number, number]) => void
+  onDragStart: () => void
+  onDragEnd: () => void
 }) {
   const geometry = useLoader(STLLoader, url)
+  const { gl } = useThree()
+  const meshRef = useRef<any>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const dragOffset = useRef(new Vector3())
 
   // Convert degrees to radians for Three.js
   const rotationRadians: [number, number, number] = [
@@ -43,15 +53,100 @@ function STLModel({
     onClick()
   }
 
+  const handlePointerDown = (e: any) => {
+    if (!isSelected) return
+    e.stopPropagation()
+
+    // Use horizontal plane at object's Y position
+    const groundPlane = new Plane(new Vector3(0, 1, 0), -position[1])
+    const intersectionPoint = new Vector3()
+    const hit = e.ray.intersectPlane(groundPlane, intersectionPoint)
+
+    if (hit) {
+      // Calculate and store offset from intersection to object center
+      dragOffset.current.set(
+        position[0] - intersectionPoint.x,
+        0,
+        position[2] - intersectionPoint.z
+      )
+    } else {
+      // If no valid intersection (shallow angle), use zero offset
+      dragOffset.current.set(0, 0, 0)
+    }
+
+    setIsDragging(true)
+    onDragStart()
+    gl.domElement.style.cursor = "grabbing"
+  }
+
+  const handlePointerMove = (e: any) => {
+    if (!isDragging || !isSelected) return
+    e.stopPropagation()
+
+    // Use horizontal plane at object's current Y position
+    const groundPlane = new Plane(new Vector3(0, 1, 0), -position[1])
+    const intersectionPoint = new Vector3()
+    const hit = e.ray.intersectPlane(groundPlane, intersectionPoint)
+
+    if (hit) {
+      // Calculate new position with stored offset
+      const newX = intersectionPoint.x + dragOffset.current.x
+      const newZ = intersectionPoint.z + dragOffset.current.z
+
+      // Validate: only update if movement is reasonable (within 100 units per frame)
+      const deltaX = Math.abs(newX - position[0])
+      const deltaZ = Math.abs(newZ - position[2])
+
+      if (deltaX < 100 && deltaZ < 100) {
+        onPositionChange([newX, position[1], newZ])
+      }
+    }
+  }
+
+  const handlePointerUp = () => {
+    if (isDragging) {
+      setIsDragging(false)
+      onDragEnd()
+      gl.domElement.style.cursor = "default"
+    }
+  }
+
+  // Handle pointer up globally to catch releases outside the mesh
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (isDragging) {
+        setIsDragging(false)
+        onDragEnd()
+        gl.domElement.style.cursor = "default"
+      }
+    }
+
+    window.addEventListener("pointerup", handleGlobalPointerUp)
+    return () => window.removeEventListener("pointerup", handleGlobalPointerUp)
+  }, [isDragging, onDragEnd, gl])
+
   console.log(`Rendering shape ${id}, isSelected: ${isSelected}`)
 
   return (
     <mesh
+      ref={meshRef}
       geometry={geometry}
       position={position}
       rotation={rotationRadians}
       onClick={handleClick}
-      onPointerOver={() => console.log("Hover over shape", id)}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerOver={() => {
+        if (isSelected) {
+          gl.domElement.style.cursor = "grab"
+        }
+      }}
+      onPointerOut={() => {
+        if (!isDragging) {
+          gl.domElement.style.cursor = "default"
+        }
+      }}
     >
       <meshStandardMaterial
         color={isSelected ? "#fbbf24" : "#3b82f6"}
@@ -62,7 +157,13 @@ function STLModel({
   )
 }
 
-function CameraController({ shapes }: { shapes: Shape[] }) {
+function CameraController({
+  shapes,
+  enabled,
+}: {
+  shapes: Shape[]
+  enabled: boolean
+}) {
   const { camera, scene } = useThree((state) => ({
     camera: state.camera as PerspectiveCamera,
     scene: state.scene,
@@ -99,9 +200,17 @@ function CameraController({ shapes }: { shapes: Shape[] }) {
       controlsRef.current.target.copy(center)
       controlsRef.current.update()
     }
-  }, [shapes, camera, scene])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes.length, camera, scene])
 
-  return <OrbitControls ref={controlsRef} autoRotate={false} makeDefault />
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      autoRotate={false}
+      makeDefault
+      enabled={enabled}
+    />
+  )
 }
 
 function AxisHelper() {
@@ -130,6 +239,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
+  const [isDraggingShape, setIsDraggingShape] = useState(false)
   const saveProjectMutation = useSaveProject()
 
   // New state for project management
@@ -154,7 +264,6 @@ function App() {
       const moveStep = 1 // Movement step size
 
       let dx = 0
-      let dy = 0
       let dz = 0
 
       switch (e.key) {
@@ -167,26 +276,18 @@ function App() {
           e.preventDefault()
           break
         case "ArrowUp":
-          if (e.shiftKey) {
-            dy = moveStep // Shift+Up moves vertically up
-          } else {
-            dz = -moveStep // Up moves forward in 3D space
-          }
+          dz = -moveStep // Up moves forward in 3D space
           e.preventDefault()
           break
         case "ArrowDown":
-          if (e.shiftKey) {
-            dy = -moveStep // Shift+Down moves vertically down
-          } else {
-            dz = moveStep // Down moves backward in 3D space
-          }
+          dz = moveStep // Down moves backward in 3D space
           e.preventDefault()
           break
         default:
           return
       }
 
-      // Update the selected shape's position
+      // Update the selected shape's position (Y stays constant)
       setShapes((prevShapes) =>
         prevShapes.map((shape) =>
           shape.id === selectedShapeId
@@ -194,7 +295,7 @@ function App() {
                 ...shape,
                 position: [
                   shape.position[0] + dx,
-                  shape.position[1] + dy,
+                  shape.position[1], // Keep Y constant - shapes can't fly
                   shape.position[2] + dz,
                 ] as [number, number, number],
               }
@@ -287,7 +388,6 @@ function App() {
       }
 
       const arrayBuffer = await blob.arrayBuffer()
-      const view = new DataView(arrayBuffer)
 
       const textDecoder = new TextDecoder()
       const header = textDecoder.decode(new Uint8Array(arrayBuffer, 0, 5))
@@ -476,6 +576,17 @@ function App() {
     setSelectedShapeId(null)
   }
 
+  const handleShapePositionChange = (
+    id: string,
+    newPosition: [number, number, number]
+  ) => {
+    setShapes((prevShapes) =>
+      prevShapes.map((shape) =>
+        shape.id === id ? { ...shape, position: newPosition } : shape
+      )
+    )
+  }
+
   // Get selected shape data
   const selectedShape = shapes.find((s) => s.id === selectedShapeId)
 
@@ -596,9 +707,14 @@ function App() {
                   rotation={shape.rotation}
                   isSelected={shape.id === selectedShapeId}
                   onClick={() => handleShapeClick(shape.id)}
+                  onPositionChange={(newPos) =>
+                    handleShapePositionChange(shape.id, newPos)
+                  }
+                  onDragStart={() => setIsDraggingShape(true)}
+                  onDragEnd={() => setIsDraggingShape(false)}
                 />
               ))}
-              <CameraController shapes={shapes} />
+              <CameraController shapes={shapes} enabled={!isDraggingShape} />
             </Canvas>
           ) : (
             <div
@@ -684,7 +800,7 @@ function App() {
 
             <div>
               <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-                Keyboard:
+                Controls:
               </span>
               <p
                 style={{
@@ -694,9 +810,7 @@ function App() {
                   color: "#d1d5db",
                 }}
               >
-                ← → ↑ ↓ to move
-                <br />
-                Shift+↑↓ for vertical
+                Drag or use arrow keys (← → ↑ ↓)
               </p>
             </div>
           </div>

@@ -147,6 +147,7 @@ function STLModel({
           gl.domElement.style.cursor = "default"
         }
       }}
+      userData={{ isShape: true }}
     >
       <meshStandardMaterial
         color={isSelected ? "#fbbf24" : "#3b82f6"}
@@ -172,12 +173,13 @@ function CameraController({
   const controlsRef = useRef<any>(undefined)
 
   useEffect(() => {
+    // Only auto-adjust camera when shapes are added/removed, not on first load
     if (shapes.length === 0) return
 
     const box = new Box3()
 
     scene.traverse((object) => {
-      if (object.type === "Mesh") {
+      if (object.type === "Mesh" && object.userData.isShape) {
         const meshBox = new Box3().setFromObject(object)
         box.union(meshBox)
       }
@@ -213,6 +215,19 @@ function CameraController({
   )
 }
 
+function Ground() {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+      <planeGeometry args={[100, 100]} />
+      <meshStandardMaterial
+        color="#4a7c59"
+        roughness={0.8}
+        metalness={0.2}
+      />
+    </mesh>
+  )
+}
+
 function AxisHelper() {
   return (
     <group>
@@ -225,7 +240,7 @@ function AxisHelper() {
       <arrowHelper
         args={[new Vector3(0, 0, 1), new Vector3(0, 0, 0), 20, 0x0000ff]}
       />
-      <gridHelper args={[50, 10, 0x888888, 0x444444]} />
+      <gridHelper args={[100, 20, 0x666666, 0x333333]} />
     </group>
   )
 }
@@ -687,48 +702,35 @@ function App() {
             overflow: "hidden",
           }}
         >
-          {shapes.length > 0 ? (
-            <Canvas
-              camera={{ position: [50, 50, 50], fov: 50 }}
-              onPointerMissed={handleCanvasClick}
-            >
-              <ambientLight intensity={0.5} />
-              <directionalLight position={[10, 10, 5]} intensity={1} />
-              <directionalLight position={[-10, -10, -5]} intensity={0.5} />
+          <Canvas
+            camera={{ position: [50, 50, 50], fov: 50 }}
+            onPointerMissed={handleCanvasClick}
+          >
+            <ambientLight intensity={0.5} />
+            <directionalLight position={[10, 10, 5]} intensity={1} />
+            <directionalLight position={[-10, -10, -5]} intensity={0.5} />
 
-              <AxisHelper />
+            <Ground />
+            <AxisHelper />
 
-              {shapes.map((shape) => (
-                <STLModel
-                  key={shape.id}
-                  id={shape.id}
-                  url={shape.url}
-                  position={shape.position}
-                  rotation={shape.rotation}
-                  isSelected={shape.id === selectedShapeId}
-                  onClick={() => handleShapeClick(shape.id)}
-                  onPositionChange={(newPos) =>
-                    handleShapePositionChange(shape.id, newPos)
-                  }
-                  onDragStart={() => setIsDraggingShape(true)}
-                  onDragEnd={() => setIsDraggingShape(false)}
-                />
-              ))}
-              <CameraController shapes={shapes} enabled={!isDraggingShape} />
-            </Canvas>
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: 0.5,
-              }}
-            >
-              <p>Add shapes to see them rendered here</p>
-            </div>
-          )}
+            {shapes.map((shape) => (
+              <STLModel
+                key={shape.id}
+                id={shape.id}
+                url={shape.url}
+                position={shape.position}
+                rotation={shape.rotation}
+                isSelected={shape.id === selectedShapeId}
+                onClick={() => handleShapeClick(shape.id)}
+                onPositionChange={(newPos) =>
+                  handleShapePositionChange(shape.id, newPos)
+                }
+                onDragStart={() => setIsDraggingShape(true)}
+                onDragEnd={() => setIsDraggingShape(false)}
+              />
+            ))}
+            <CameraController shapes={shapes} enabled={!isDraggingShape} />
+          </Canvas>
         </div>
       </div>
 
